@@ -1,0 +1,152 @@
+#!/usr/local/bin/python3.7
+
+import boto3
+import time
+import copy
+import re
+import datetime
+
+
+def atoi(text):
+    return int(text) if text.isdigit() else text
+
+def natural_keys(text):
+    return [ atoi(c) for c in re.split(r'(\d+)', text) ]
+
+today = datetime.date.today()
+today_string = time.strftime('%Y-%m-%d')
+
+
+ec2_client = boto3.client('ec2','us-east-1')
+ec2_resource = boto3.resource('ec2','us-east-1')
+ssm_client = boto3.client('ssm', 'us-east-1')
+
+
+print (today_string)
+
+images = ec2_client.describe_images(
+    Filters = [ {'Name' : 'name', 'Values' : [ 'Base AMI Amazon2*' ]},
+  ] 
+    )
+
+print (images)
+
+
+amis = sorted(images['Images'],
+              key=lambda x: x['CreationDate'],
+              reverse=True)
+
+image_ami = (amis[0]['ImageId'])
+
+print (image_ami)
+
+
+ssm_update_ami = ssm_client.start_automation_execution(
+                 DocumentName='Custom-UpdateLinuxAMI',
+                 Parameters={
+                               'SourceAmiId': [ image_ami ] }
+               )
+
+
+print (ssm_update_ami)
+
+time.sleep( 780 )
+
+new_images = ec2_client.describe_images(
+    Filters = [ {'Name' : 'name', 'Values' : [ 'Base AMI Amazon2*' ]},
+  ] 
+    )
+
+print (new_images)
+
+
+new_ami = sorted(new_images['Images'],
+                  key=lambda x: x['CreationDate'],
+                  reverse=True)
+
+ssm_ami = (new_ami[0]['ImageId'])
+
+print (ssm_ami)
+
+
+tag_ami = ec2_resource.Image(ssm_ami)
+
+print (tag_ami)
+
+celltrak_tag_ami = tag_ami.create_tags(Tags=[ { 'Key': 'Name', 'Value': 'Base AMI Amazon2 ' + today_string },
+                                  { 'Key': 'Compliance', 'Value': 'HIPAA' },
+                                  { 'Key': 'Cost Center', 'Value': 'V2' }                               
+                                ])
+
+print (celltrak_tag_ami)
+
+
+block_devices = copy.deepcopy(tag_ami.block_device_mappings)
+print (block_devices)
+
+for snap in block_devices:
+    if not 'Ebs' in snap:
+        continue
+    snapshot_id = snap['Ebs']['SnapshotId']
+    print (snapshot_id)
+    snapshot = ec2_resource.Snapshot(snapshot_id)
+    print (snapshot)
+    
+    ec2_client.create_tags(Resources=[snapshot_id,],Tags=[ { 'Key': 'Name', 'Value': 'Base AMI Amazon2 ' + today_string },
+                                  { 'Key': 'Compliance', 'Value': 'HIPAA' },                      
+                                  { 'Key': 'Cost Center', 'Value': 'V2' }                               
+                                ])
+
+ami_image_name = list(map(lambda i: i['Name'], ec2_client.describe_images(
+    Filters = [ {'Name' : 'tag:Name', 'Values' : [ 'Base AMI Amazon2*' ]},
+  ] 
+    )['Images']))
+
+celltrak_ami_image_name = (' ' .join(ami_image_name))
+
+ami_image_list = []
+
+for ami in ami_image_name:
+    ami_image_list.append(ami)
+print (ami_image_list)
+
+ami_image_list.sort(key=natural_keys)
+
+
+if len(ami_image_list) > 3:
+    result = [ ami_image_list[0] ]
+    result_image = (' ' .join(result))
+    print (result_image)
+
+    result_ami_name = list(map(lambda i: i['ImageId'], ec2_client.describe_images(
+        Filters=[
+                 {
+                   'Name' : 'tag:Name',
+                   'Values' : [ result_image ]
+                 },
+       ] 
+    )['Images']))
+    
+    celltrak_ami_purge = (' ' .join(result_ami_name))
+    
+    print (celltrak_ami_purge)
+    
+    celltrak_deregister_ami = ec2_client.deregister_image(
+       ImageId=celltrak_ami_purge,
+       DryRun=False
+   )
+    
+    print (celltrak_deregister_ami)
+    
+    celltrak_ami_snapshots = ec2_client.describe_snapshots(Filters=[{'Name': 'tag:Name', 'Values': [ result_image ]}])
+    
+    
+    for snapshot in celltrak_ami_snapshots['Snapshots']:
+            delete_snapshots = (snapshot['SnapshotId'])
+            print (delete_snapshots)
+            
+            delete = ec2_client.delete_snapshot(
+                                                   SnapshotId=delete_snapshots,
+                                                   DryRun=False)
+            
+            print (delete)

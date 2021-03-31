@@ -73,12 +73,12 @@ tag_ami = ec2_resource.Image(ssm_ami)
 
 print (tag_ami)
 
-celltrak_tag_ami = tag_ami.create_tags(Tags=[ { 'Key': 'Name', 'Value': 'Base AMI Amazon2 ' + today_string },
+image_tag_ami = tag_ami.create_tags(Tags=[ { 'Key': 'Name', 'Value': 'Base AMI Amazon2 ' + today_string },
                                   { 'Key': 'Compliance', 'Value': 'HIPAA' },
                                   { 'Key': 'Cost Center', 'Value': 'V2' }                               
                                 ])
 
-print (celltrak_tag_ami)
+print (image_tag_ami)
 
 
 block_devices = copy.deepcopy(tag_ami.block_device_mappings)
@@ -102,7 +102,7 @@ ami_image_name = list(map(lambda i: i['Name'], ec2_client.describe_images(
   ] 
     )['Images']))
 
-celltrak_ami_image_name = (' ' .join(ami_image_name))
+account_ami_image_name = (' ' .join(ami_image_name))
 
 ami_image_list = []
 
@@ -127,21 +127,21 @@ if len(ami_image_list) > 3:
        ] 
     )['Images']))
     
-    celltrak_ami_purge = (' ' .join(result_ami_name))
+    ami_purge = (' ' .join(result_ami_name))
     
-    print (celltrak_ami_purge)
+    print (ami_purge)
     
-    celltrak_deregister_ami = ec2_client.deregister_image(
-       ImageId=celltrak_ami_purge,
+    deregister_ami = ec2_client.deregister_image(
+       ImageIdami_purge,
        DryRun=False
    )
     
-    print (celltrak_deregister_ami)
+    print (deregister_ami)
     
-    celltrak_ami_snapshots = ec2_client.describe_snapshots(Filters=[{'Name': 'tag:Name', 'Values': [ result_image ]}])
+    ami_snapshots = ec2_client.describe_snapshots(Filters=[{'Name': 'tag:Name', 'Values': [ result_image ]}])
     
     
-    for snapshot in celltrak_ami_snapshots['Snapshots']:
+    for snapshot in ami_snapshots['Snapshots']:
             delete_snapshots = (snapshot['SnapshotId'])
             print (delete_snapshots)
             
